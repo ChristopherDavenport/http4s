@@ -2,6 +2,8 @@ package org.http4s
 package client
 package blaze
 
+import fs2.Strategy
+
 /** Create HTTP1 clients which will disconnect on completion of one request */
 object SimpleHttp1Client {
   /** create a new simple client

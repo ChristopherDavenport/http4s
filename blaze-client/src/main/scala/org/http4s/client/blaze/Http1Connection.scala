@@ -19,16 +19,12 @@ import org.http4s.util.{StringWriter, Writer}
 import scala.annotation.tailrec
 import scala.concurrent.ExecutionContext
 import scala.util.{Failure, Success}
-import scalaz.concurrent.Task
-import scalaz.stream.Cause.{End, Terminated}
-import scalaz.stream.Process
-import scalaz.stream.Process.{Halt, halt}
-import scalaz.{-\/, \/-}
+import fs2.{Strategy, Task, Stream}
 
 private final class Http1Connection(val requestKey: RequestKey,
                             config: BlazeClientConfig,
                             executor: ExecutorService,
-                            protected val ec: ExecutionContext)
+                            protected val ec: ExecutionContext)()
   extends Http1Stage with BlazeConnection
 {
   import org.http4s.client.blaze.Http1Connection._
@@ -67,16 +63,16 @@ private final class Http1Connection(val requestKey: RequestKey,
   @tailrec
   private def shutdownWithError(t: Throwable): Unit = stageState.get match {
     // If we have a real error, lets put it here.
-    case st@ Error(EOF) if t != EOF => 
+    case st@ Error(EOF) if t != EOF =>
       if (!stageState.compareAndSet(st, Error(t))) shutdownWithError(t)
       else sendOutboundCommand(Command.Error(t))
 
     case Error(_) => // NOOP: already shutdown
 
-    case x => 
+    case x =>
       if (!stageState.compareAndSet(x, Error(t))) shutdownWithError(t)
       else {
-        val cmd = t match { 
+        val cmd = t match {
           case EOF => Command.Disconnect
           case _   => Command.Error(t)
         }
@@ -119,7 +115,7 @@ private final class Http1Connection(val requestKey: RequestKey,
 
   override protected def contentComplete(): Boolean = parser.contentComplete()
 
-  private def executeRequest(req: Request): Task[Response] = {
+  private def executeRequest(req: Request)(implicit S : Strategy = Strategy.fromExecutionContext(ec)): Task[Response] = {
     logger.debug(s"Beginning request: ${req.method} ${req.uri}")
     validateRequest(req) match {
       case Left(e)    => Task.fail(e)
@@ -150,7 +146,7 @@ private final class Http1Connection(val requestKey: RequestKey,
     }
   }
 
-  private def receiveResponse(closeOnFinish: Boolean, doesntHaveBody: Boolean): Task[Response] =
+  private def receiveResponse(closeOnFinish: Boolean, doesntHaveBody: Boolean)(implicit S: Strategy): Task[Response] =
     Task.async[Response](cb => readAndParsePrelude(cb, closeOnFinish, doesntHaveBody, "Initial Read"))
 
   // this method will get some data, and try to continue parsing using the implicit ec
@@ -158,13 +154,13 @@ private final class Http1Connection(val requestKey: RequestKey,
     channelRead().onComplete {
       case Success(buff) => parsePrelude(buff, closeOnFinish, doesntHaveBody, cb)
       case Failure(EOF)  => stageState.get match {
-        case Idle | Running => shutdown(); cb(-\/(EOF))
-        case Error(e)       => cb(-\/(e))
+        case Idle | Running => shutdown(); cb(Left(EOF))
+        case Error(e)       => cb(Left(e))
       }
 
       case Failure(t)    =>
         fatalError(t, s"Error during phase: $phase")
-        cb(-\/(t))
+        cb(Left(t))
     }(ec)
   }
 
@@ -181,9 +177,9 @@ private final class Http1Connection(val requestKey: RequestKey,
         // we are now to the body
         def terminationCondition() = stageState.get match {  // if we don't have a length, EOF signals the end of the body.
           case Error(e) if e != EOF => e
-          case _ =>
-            if (parser.definedContentLength() || parser.isChunked()) InvalidBodyException("Received premature EOF.")
-            else Terminated(End)
+//          case _ =>
+//            if (parser.definedContentLength() || parser.isChunked()) InvalidBodyException("Received premature EOF.")
+//            else Terminated(End)
         }
 
         def cleanup(): Unit = {
@@ -223,18 +219,21 @@ private final class Http1Connection(val requestKey: RequestKey,
             trailerCleanup(); cleanup()
             attributes -> rawBody
           } else {
-            attributes -> rawBody.onHalt {
-              case End => Process.eval_(Task{ trailerCleanup(); cleanup(); }(executor))
+            stageShutdown()
+            attributes -> rawBody
 
-              case c => Process.await(Task {
-                logger.debug(c.asThrowable)("Response body halted. Closing connection.")
-                stageShutdown()
-              }(executor))(_ => Halt(c))
-            }
+
+            //            attributes -> rawBody.onHalt {
+            //              case End => Process.eval_(Task{ trailerCleanup(); cleanup(); })
+            //
+            //              case c => Stream.delay(Task {
+            //                logger.debug(c.asThrowable)("Response body halted. Closing connection.")
+            //                stageShutdown()
+            //              }(executor))(_ => Halt(c))
           }
         }
 
-        cb(\/-(
+        cb(Right(
           Response(status = status,
             httpVersion = httpVersion,
             headers = headers,
@@ -245,7 +244,7 @@ private final class Http1Connection(val requestKey: RequestKey,
     } catch {
       case t: Throwable =>
         logger.error(t)("Error during client request decode loop")
-        cb(-\/(t))
+        cb(Left(t))
     }
   }
 
@@ -257,8 +256,8 @@ private final class Http1Connection(val requestKey: RequestKey,
     val minor = getHttpMinor(req)
 
       // If we are HTTP/1.0, make sure HTTP/1.0 has no body or a Content-Length header
-    if (minor == 0 && !req.body.isHalt && `Content-Length`.from(req.headers).isEmpty) {
-      logger.warn(s"Request ${req.copy(body = halt)} is HTTP/1.0 but lacks a length header. Transforming to HTTP/1.1")
+    if (minor == 0 && /** !req.body.isHalt && **/ `Content-Length`.from(req.headers).isEmpty) {
+      logger.warn(s"Request $req is HTTP/1.0 but lacks a length header. Transforming to HTTP/1.1")
       validateRequest(req.copy(httpVersion = HttpVersion.`HTTP/1.1`))
     }
       // Ensure we have a host header for HTTP/1.1
@@ -271,7 +270,7 @@ private final class Http1Connection(val requestKey: RequestKey,
         }
         validateRequest(req.copy(uri = req.uri.copy(authority = Some(newAuth))))
       }
-      else if (req.body.isHalt || `Content-Length`.from(req.headers).nonEmpty) {  // translate to HTTP/1.0
+      else if ( /** req.body.isHalt || **/ `Content-Length`.from(req.headers).nonEmpty) {  // translate to HTTP/1.0
         validateRequest(req.copy(httpVersion = HttpVersion.`HTTP/1.0`))
       } else {
         Left(new IllegalArgumentException("Host header required for HTTP/1.1 request"))
@@ -314,4 +313,3 @@ private object Http1Connection {
     } else writer
   }
 }
-

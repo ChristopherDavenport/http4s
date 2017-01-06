@@ -15,8 +15,9 @@ import org.http4s.util.CaseInsensitiveString._
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
-import scalaz.concurrent.Task
-import scalaz.{-\/, \/, \/-}
+import scala.util.Try
+import fs2.{Strategy, Task}
+import cats.implicits._
 
 private object Http1Support {
   /** Create a new [[ConnectionBuilder]]
@@ -44,8 +45,8 @@ final private class Http1Support(config: BlazeClientConfig, executor: ExecutorSe
 ////////////////////////////////////////////////////
 
   def makeClient(requestKey: RequestKey): Task[BlazeConnection] = getAddress(requestKey) match {
-    case \/-(a) => task.futureToTask(buildPipeline(requestKey, a))(ec)
-    case -\/(t) => Task.fail(t)
+    case Right(a) => task.futureToTask(buildPipeline(requestKey, a))(ec)
+    case Left(t) => Task.fail(t)
   }
 
   private def buildPipeline(requestKey: RequestKey, addr: InetSocketAddress): Future[BlazeConnection] = {
@@ -58,7 +59,7 @@ final private class Http1Support(config: BlazeClientConfig, executor: ExecutorSe
   }
 
   private def buildStages(requestKey: RequestKey): (LeafBuilder[ByteBuffer], BlazeConnection) = {
-    val t = new Http1Connection(requestKey, config, executor, ec)
+    val t = new Http1Connection(requestKey, config, executor, ec)()
     val builder = LeafBuilder(t).prepend(new ReadBufferStage[ByteBuffer])
     requestKey match {
       case RequestKey(Https, auth) =>
@@ -77,13 +78,12 @@ final private class Http1Support(config: BlazeClientConfig, executor: ExecutorSe
     }
   }
 
-  private def getAddress(requestKey: RequestKey): Throwable \/ InetSocketAddress = {
+  private def getAddress(requestKey: RequestKey): Either[Throwable,InetSocketAddress] = {
     requestKey match {
       case RequestKey(s, auth) =>
         val port = auth.port getOrElse { if (s == Https) 443 else 80 }
         val host = auth.host.value
-        \/.fromTryCatchNonFatal(new InetSocketAddress(host, port))
+        Either.fromTry(Try(new InetSocketAddress(host, port)))
     }
   }
 }
-
