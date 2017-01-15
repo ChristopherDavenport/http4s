@@ -1,6 +1,6 @@
 package org.http4s.client.blaze
 
-import scalaz.concurrent.Task
+import fs2.Task
 
 import org.http4s._
 
@@ -13,13 +13,13 @@ class ExternalBlazeHttp1ClientSpec extends Http4sSpec {
 
   "Blaze Simple Http1 Client" should {
     "Make simple https requests" in {
-      val resp = simpleClient.expect[String](uri("https://github.com/")).run
+      val resp = simpleClient.expect[String](uri("https://github.com/")).unsafeRun()
       resp.length mustNotEqual 0
     }
   }
 
   step {
-    simpleClient.shutdown.run
+    simpleClient.shutdown.unsafeRun()
   }
 
   private val pooledClient = PooledHttp1Client()
@@ -28,23 +28,21 @@ class ExternalBlazeHttp1ClientSpec extends Http4sSpec {
     def fetchBody = pooledClient.toService(_.as[String]).local { uri: Uri => Request(uri = uri) }
 
     "Make simple https requests" in {
-      val resp = fetchBody.run(uri("https://github.com/")).run
+      val resp = fetchBody.run(uri("https://github.com/")).unsafeRun()
       resp.length mustNotEqual 0
     }
 
     "Repeat a simple https request" in {
-      val f = (0 until 10).map(_ => Task.fork {
+      val f = (0 until 10).map(_ => Task.delay {
         val resp = fetchBody.run(uri("https://github.com/"))
         resp.map(_.length)
       })
 
-      foreach(Task.gatherUnordered(f).run) { length =>
-        length mustNotEqual 0
-      }
+      foreach(f){ _.unsafeRun().unsafeRun() mustNotEqual 0 }
     }
   }
 
   step {
-    pooledClient.shutdown.run
+    pooledClient.shutdown.unsafeRun()
   }
 }

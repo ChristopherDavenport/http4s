@@ -8,22 +8,26 @@ import java.nio.ByteBuffer
 import org.http4s.blaze.SeqTestHead
 import org.http4s.blaze.pipeline.LeafBuilder
 import org.http4s.util.CaseInsensitiveString._
+import org.http4s.client.impl.DefaultExecutor
 import bits.DefaultUserAgent
 import org.specs2.mutable.Specification
-import scodec.bits.ByteVector
+// import scodec.bits.ByteVector
 
 import scala.concurrent.Await
 import scala.concurrent.duration._
-import scalaz.\/-
-import scalaz.concurrent.{Strategy, Task}
+
+import fs2._
+// import scalaz.\/-
+// import scalaz.concurrent.{Strategy, Task}
 
 // TODO: this needs more tests
 class Http1ClientStageSpec extends Specification {
 
   val ec = org.http4s.blaze.util.Execution.trampoline
-  val es = Strategy.DefaultExecutorService
+  val es = DefaultExecutor.newClientDefaultExecutorService("default")
+  implicit val strategy = Strategy.fromExecutor(es)
 
-  val www_foo_test = Uri.uri("http://www.foo.test")
+  val www_foo_test = Uri.unsafeFromString("http://www.foo.test")
   val FooRequest = Request(uri = www_foo_test)
   val FooRequestKey = RequestKey.fromRequest(FooRequest)
 
@@ -35,12 +39,12 @@ class Http1ClientStageSpec extends Specification {
   // The executor in here needs to be shut down manually because the `BlazeClient` class won't do it for us
   private val defaultConfig = BlazeClientConfig.defaultConfig
 
-  private def mkConnection(key: RequestKey) = new Http1Connection(key, defaultConfig, es, ec)
+  private def mkConnection(key: RequestKey) = new Http1Connection(key, defaultConfig, es, ec)()
 
   private def mkBuffer(s: String): ByteBuffer = ByteBuffer.wrap(s.getBytes(StandardCharsets.ISO_8859_1))
 
   private def bracketResponse[T](req: Request, resp: String)(f: Response => Task[T]): Task[T] = {
-    val stage = new Http1Connection(FooRequestKey, defaultConfig.copy(userAgent = None), es, ec)
+    val stage = new Http1Connection(FooRequestKey, defaultConfig.copy(userAgent = None), es, ec)()
     Task.suspend {
       val h = new SeqTestHead(resp.toSeq.map{ chr =>
         val b = ByteBuffer.allocate(1)
@@ -67,16 +71,16 @@ class Http1ClientStageSpec extends Specification {
     LeafBuilder(stage).base(h)
 
     val result = new String(stage.runRequest(req)
-      .run
+      .unsafeRun
       .body
       .runLog
-      .run
-      .foldLeft(ByteVector.empty)(_ ++ _)
-      .toArray)
+      .unsafeRun()
+      .toArray
+   )
 
     h.stageShutdown()
     val buff = Await.result(h.result, 10.seconds)
-    val request = new String(ByteVector(buff).toArray, StandardCharsets.ISO_8859_1)
+    val request = new String(buff.array(), StandardCharsets.ISO_8859_1)
     (request, result)
   }
 
@@ -99,7 +103,7 @@ class Http1ClientStageSpec extends Specification {
 
     "Submit a request line with a query" in {
       val uri = "/huh?foo=bar"
-      val \/-(parsed) = Uri.fromString("http://www.foo.test" + uri)
+      val Right(parsed) = Uri.fromString("http://www.foo.test" + uri)
       val req = Request(uri = parsed)
 
       val (request, response) = getSubmission(req, resp)
@@ -116,8 +120,8 @@ class Http1ClientStageSpec extends Specification {
       LeafBuilder(tail).base(h)
 
       try {
-        tail.runRequest(FooRequest).run  // we remain in the body
-        tail.runRequest(FooRequest).run must throwA[Http1Connection.InProgressException.type]
+        tail.runRequest(FooRequest).unsafeRun()  // we remain in the body
+        tail.runRequest(FooRequest).unsafeRun() must throwA[Http1Connection.InProgressException.type]
       }
       finally {
         tail.shutdown()
@@ -131,9 +135,9 @@ class Http1ClientStageSpec extends Specification {
         LeafBuilder(tail).base(h)
 
         // execute the first request and run the body to reset the stage
-        tail.runRequest(FooRequest).run.body.run.run
+        tail.runRequest(FooRequest).unsafeRun().body
 
-        val result = tail.runRequest(FooRequest).run
+        val result = tail.runRequest(FooRequest).unsafeRun()
         tail.shutdown()
 
         result.headers.size must_== 1
@@ -151,9 +155,9 @@ class Http1ClientStageSpec extends Specification {
         val h = new SeqTestHead(List(mkBuffer(resp)))
         LeafBuilder(tail).base(h)
 
-        val result = tail.runRequest(FooRequest).run
+        val result = tail.runRequest(FooRequest).unsafeRun()
 
-        result.body.run.run must throwA[InvalidBodyException]
+        result.body must throwA[InvalidBodyException]
       }
       finally {
         tail.shutdown()
@@ -207,7 +211,7 @@ class Http1ClientStageSpec extends Specification {
 
     "Not add a User-Agent header when configured with None" in {
       val resp = "HTTP/1.1 200 OK\r\n\r\ndone"
-      val tail = new Http1Connection(FooRequestKey, defaultConfig.copy(userAgent = None), es, ec)
+      val tail = new Http1Connection(FooRequestKey, defaultConfig.copy(userAgent = None), es, ec)()
 
       try {
         val (request, response) = getSubmission(FooRequest, resp, tail)
@@ -254,14 +258,14 @@ class Http1ClientStageSpec extends Specification {
         val h = new SeqTestHead(List(mkBuffer(resp)))
         LeafBuilder(tail).base(h)
 
-        val response = tail.runRequest(headRequest).run
+        val response = tail.runRequest(headRequest).unsafeRun()
         response.contentLength must_== Some(contentLength)
 
         // connection reusable immediately after headers read
         tail.isRecyclable must_=== true
 
         // body is empty due to it being HEAD request
-        response.body.runLog.run.foldLeft(0L)(_ + _.length) must_== 0L
+        response.body.runLog.unsafeRun().foldLeft(0L)(_ + Byte.byte2long(_)) must_== 0L
       } finally {
         tail.shutdown()
       }
@@ -286,7 +290,7 @@ class Http1ClientStageSpec extends Specification {
           } yield hs
         }
 
-        hs.run.mkString must_== "Foo: Bar"
+        hs.unsafeRun().mkString must_== "Foo: Bar"
       }
 
       "Fail to get trailers before they are complete" in {
@@ -297,9 +301,8 @@ class Http1ClientStageSpec extends Specification {
           } yield hs
         }
 
-        hs.run must throwA[IllegalStateException]
+        hs.unsafeRun() must throwA[IllegalStateException]
       }
     }
   }
 }
-
