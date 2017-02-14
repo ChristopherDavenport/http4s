@@ -17,6 +17,7 @@ import org.http4s.MediaType._
 import org.http4s.headers._
 import org.http4s.util.CaseInsensitiveString
 import org.http4s.util.string._
+import scodec.bits.ByteVector
 
 final case class Part(headers: Headers, body: EntityBody) {
   def name: Option[CaseInsensitiveString] = headers.get(`Content-Disposition`).map(_.name)
@@ -30,7 +31,7 @@ object Part {
 
   def formData(name: String, value: String, headers: Header*): Part =
     Part(`Content-Disposition`("form-data", Map("name" -> name)) +: headers,
-      emit(value).through(utf8Encode))
+      emit(value).covary[Pure].through(utf8Encode))
 
   def fileData(name: String, file: File, headers: Header*): Part =
     fileData(name, file.getName, new FileInputStream(file), headers:_*)
@@ -53,6 +54,8 @@ final case class Multipart(parts: Vector[Part], boundary: Boundary = Boundary.cr
 final case class Boundary(value: String) extends AnyVal {
   def toChunk: Chunk[Byte] =
     Chunk.bytes(value.getBytes(StandardCharsets.UTF_8))
+  def toByteVector: ByteVector =
+    ByteVector.view(value.getBytes(StandardCharsets.UTF_8))
 }
 
 object Boundary {

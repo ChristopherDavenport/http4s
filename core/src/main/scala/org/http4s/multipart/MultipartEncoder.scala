@@ -60,7 +60,7 @@ private[http4s] object MultipartEncoder extends EntityEncoder[Multipart] {
     val body = parts.tail.foldLeft(renderPart(_start, parts.head)) { (acc, part) =>
       acc ++ renderPart(_encapsulation, part)
     } ++ byteVectorToByteStream(_end).covary[Task]
-    
+
     Task.now(Entity(body, None))
   }
 }

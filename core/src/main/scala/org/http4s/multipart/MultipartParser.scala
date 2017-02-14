@@ -1,13 +1,13 @@
-// TODO fs2 port
-/*
 package org.http4s
 package multipart
 
 import scodec.bits.ByteVector
+import fs2._
+import fs2.Stream._
+import cats.syntax.either._
 
 /** A low-level multipart-parsing pipe.  Most end users will prefer EntityDecoder[Multipart]. */
 object MultipartParser {
-  import Process._
 
   private[this] val logger = org.log4s.getLogger
 
@@ -16,7 +16,7 @@ object MultipartParser {
 
   private final case class Out[+A](a: A, tail: Option[ByteVector] = None)
 
-  def parse(boundary: Boundary): Writer1[Headers, ByteVector, ByteVector] = {
+  def parse[F[_]](boundary: Boundary): Pipe[F, ByteVector, Either[Headers,ByteVector]] = {
     val boundaryBytes = boundary.toByteVector
     val startLine = DASHDASH ++ boundaryBytes
     val endLine = startLine ++ DASHDASH
@@ -24,8 +24,10 @@ object MultipartParser {
     // At various points, we'll read up until we find this, to loop back into beginPart.
     val expected = CRLF ++ startLine
 
-    def receiveLine(leading: Option[ByteVector]): Writer1[ByteVector, ByteVector, Out[ByteVector]] = {
-      def handle(bv: ByteVector): Writer1[ByteVector, ByteVector, Out[ByteVector]] = {
+    // TODO may need a custom Pull for individual lines due to CRLF across chunks
+    def receiveLine: Pipe[F, ByteVector, Either[ByteVector, Out[ByteVector]]] = s => {
+
+      def handle: Pipe[F, ByteVector, Either[ByteVector, Out[ByteVector]]] = s => s.flatMap{ bv =>
         logger.trace(s"handle: $bv")
         val index = bv indexOfSlice CRLF
 
@@ -33,30 +35,33 @@ object MultipartParser {
           val (head, tailPre) = bv splitAt index
           val tail = tailPre drop 2       // remove the line feed characters
           val tailM = Some(tail) filter { !_.isEmpty }
-          emit(\/-(Out(head, tailM)))
+          Stream.emit(Either.right(Out(head, tailM)))
         }
         else if (bv.nonEmpty && bv.get(bv.length - 1) == '\r') {
           // The CRLF may have split across chunks.
           val (head, cr) = bv.splitAt(bv.length - 1)
-          emit(-\/(head)) ++ receive1(next => handle(cr ++ next))
+          Stream.emit(Either.left(head)) //++ receive1(next => handle(cr ++ next))
         }
         else {
-          emit(-\/(bv)) ++ receiveLine(None)
+          Stream.emit(Either.left(bv)) //++ receiveLine(None)
         }
       }
 
-      leading map handle getOrElse receive1(handle)
+      s.through(handle)
+//      leading map handle getOrElse receive1(handle)
     }
 
-    def receiveCollapsedLine(leading: Option[ByteVector]): Process1[ByteVector, Out[ByteVector]] = {
-      receiveLine(leading) pipe process1.fold(Out(ByteVector.empty)) {
-        case (acc, -\/(partial)) => acc.copy(acc.a ++ partial)
-        case (acc, \/-(Out(term, tail))) => Out(acc.a ++ term, tail)
-      }
+    def receiveCollapsedLine: Pipe[F, ByteVector, Out[ByteVector]] = s => {
+      s
+        .through(receiveLine)
+        .through{pipe.fold(Out(ByteVector.empty)) {
+          case (acc, Left(partial)) => acc.copy(acc.a ++ partial)
+          case (acc, Right(Out(term, tail))) => Out(acc.a ++ term, tail)
+        }}
     }
 
-    def start: Writer1[Headers, ByteVector, ByteVector] = {
-      def beginPart(leading: Option[ByteVector]): Process1[ByteVector, Option[ByteVector]] = {
+    def start: Pipe[F, ByteVector, Either[Headers, ByteVector]] = {
+      def beginPart: Pipe[F, ByteVector, Option[ByteVector]] = s => {
         def isStartLine(line: ByteVector): Boolean =
           line.startsWith(startLine) && isTransportPadding(line.drop(startLine.size))
 
@@ -66,54 +71,52 @@ object MultipartParser {
         def isTransportPadding(bv: ByteVector): Boolean =
           bv.toSeq.find(b => b != ' ' && b != '\t').isEmpty
 
-        receiveCollapsedLine(leading) flatMap { case Out(line, tail) =>
+        s.through(receiveCollapsedLine) flatMap  { case Out(line, tail) =>
           if (isStartLine(line)) {
             logger.debug("Found start line. Beginning new part.")
             emit(tail)
           }
           else if (isEndLine(line)) {
             logger.debug("Found end line. Halting.")
-            halt
+            Stream.empty
           }
           else {
             logger.trace(s"Discarding prelude: $line")
-            beginPart(tail)
+            tail.map(Stream.emit(_).through(beginPart)).getOrElse(Stream.empty)
           }
         }
       }
 
-      def go(leading: Option[ByteVector]): Writer1[Headers, ByteVector, ByteVector] = {
+      def go: Pipe[F, ByteVector, Either[Headers,ByteVector]] = s => {
         for {
-          tail <- beginPart(leading)
+          tail <- s.through(beginPart)
           headerPair <- header(tail, expected)
           Out(headers, tail2) = headerPair
           _ = logger.debug(s"Headers: $headers")
-          spacePair <- receiveCollapsedLine(tail2)
+          spacePair <- tail2.map(Stream.emit).getOrElse(Stream.empty).through(receiveCollapsedLine)
           tail3 = spacePair.tail // eat the space between header and content
-          part <- emit(-\/(headers)) ++ body(tail3.map(_.compact), expected).flatMap {
+          part <- emit(Either.left(headers)) ++ body(tail3.map(_.compact), expected) {
             case Out(chunk, None) =>
               logger.debug(s"Chunk: $chunk")
-              emit(\/-(chunk))
+              emit(Either.right(chunk))
             case Out(ByteVector.empty, tail) =>
               logger.trace(s"Resuming with $tail.")
-              go(tail)
+              tail.map(Stream.emit).getOrElse(Stream.empty).through(go)
             case Out(chunk, tail) =>
               logger.debug(s"Last chunk: $chunk.")
               logger.trace(s"Resuming with $tail.")
-              emit(\/-(chunk)) ++ go(tail)
+              emit(Either.right(chunk)) ++ tail.map(Stream.emit).getOrElse(Stream.empty).through(go)
           }
         } yield part
       }
 
-      go(None)
-    }
 
-    def header(leading: Option[ByteVector], expected: ByteVector): Process1[ByteVector, Out[Headers]] = {
-      def go(leading: Option[ByteVector], expected: ByteVector): Process1[ByteVector, Out[Headers]] = {
+    def header(leading: Option[ByteVector], expected: ByteVector): Pipe[F, ByteVector, Out[Headers]] = {
+      def go(leading: Option[ByteVector], expected: ByteVector): Pipe[F, ByteVector, Out[Headers]] = {
         receiveCollapsedLine(leading) flatMap {
           case Out(bv, tail) => {
             if (bv == expected) {
-              halt
+              Stream.empty
             } else {
               val headerM = for {
                 line <- bv.decodeAscii.right.toOption
@@ -135,12 +138,12 @@ object MultipartParser {
       }
     }
 
-    def body(leading: Option[ByteVector], expected: ByteVector): Process1[ByteVector, Out[ByteVector]] = {
+    def body(leading: Option[ByteVector], expected: ByteVector): Pipe[F, ByteVector, Out[ByteVector]] = {
       val heads = (0L until expected.length).scanLeft(expected) { (acc, _) =>
         acc dropRight 1
       }
 
-      def pre(bv: ByteVector): Process1[ByteVector, Out[ByteVector]] = {
+      def pre: Pipe[F, ByteVector, Out[ByteVector]] = s => s.flatMap{ bv =>
         logger.trace(s"pre: $bv")
         val idx = bv indexOfSlice expected
         if (idx >= 0) {
@@ -149,9 +152,15 @@ object MultipartParser {
           emit(Out(bv take idx, Some(bv drop (idx + 2))))
         } else {
           // find goes from front to back, and heads is in order from longest to shortest, thus we always greedily match
-          heads find (bv endsWith) map { tail =>
-            emit(Out(bv dropRight tail.length)) ++ mid(tail, expected drop tail.length)
-          } getOrElse (emit(Out(bv)) ++ receive1(pre))
+//          heads find (bv endsWith) map { tail =>
+////            val current = emit(Out(bv.dropRight(tail.length)))
+////            val midStream = Stream.emit(tail).through2(Stream.emit(expected.drop(tail.lenght))(mid)expected.drop(tail.length))
+//            Stream.empty[Out[ByteVector]]
+//          }.getOrElse(emit(Out(bv)))
+//          heads find (bv endsWith) map { tail =>
+//            emit(Out(bv dropRight tail.length)) ++ mid(tail, expected drop tail.length)
+//          } getOrElse (emit(Out(bv))
+          Stream.empty
         }
       }
 
@@ -161,11 +170,11 @@ object MultipartParser {
        * @param found the part of the next boundary that we've matched so far
        * @param remainder the part of the next boundary we're looking for on the next read.
        */
-      def mid(found: ByteVector, remainder: ByteVector): Process1[ByteVector, Out[ByteVector]] = {
+      def mid: Pipe2[F, ByteVector, ByteVector, Out[ByteVector]] = (f, r) => (f.zip(r)).flatMap{ case (found, remainder) =>
         logger.trace(s"mid: $found remainder")
         if (remainder.isEmpty) {
           // found should start with a CRLF, because mid is called with it.
-          emit(Out(ByteVector.empty, Some(found.drop(2))))
+          emit(Out(ByteVector.empty, Some(found.drop(2)))).covary[F]
         } else {
           receive1Or[ByteVector, Out[ByteVector]](
             fail(new MalformedMessageBodyFailure("Part was not terminated"))) { bv =>
@@ -194,4 +203,4 @@ object MultipartParser {
     start
   }
 }
-*/
+
