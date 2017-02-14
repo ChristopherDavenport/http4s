@@ -1,16 +1,14 @@
-// TODO fs2 port
-/*
 package org.http4s
 package multipart
 
 import scala.util.Random
-
 import org.http4s.EntityEncoder._
 import org.http4s.MediaType._
 import org.http4s.headers._
 import org.http4s.Uri._
 import org.http4s.util._
 import scodec.bits.ByteVector
+import fs2.{Pure, Stream, Task}
 
 private[http4s] object MultipartEncoder extends EntityEncoder[Multipart] {
 
@@ -50,17 +48,20 @@ private[http4s] object MultipartEncoder extends EntityEncoder[Multipart] {
     val _end           = end(mp.boundary)
     val _encapsulation = ByteVector(encapsulation(mp.boundary).getBytes)
 
-    def renderPart(prelude: ByteVector, p: Part) =
-      Process.emit(prelude ++ (p.headers.foldLeft(ByteVectorWriter()) { (w, h) =>
+    def byteVectorToByteStream(bv: ByteVector): Stream[Pure, Byte] = Stream.emits(bv.toSeq)
+
+
+    def renderPart(prelude: ByteVector, p: Part): Stream[Task, Byte] =
+      Stream.emit(prelude ++ (p.headers.foldLeft(ByteVectorWriter()) { (w, h) =>
         w << h << Boundary.CRLF
-      } << Boundary.CRLF).toByteVector) ++ p.body
+      } << Boundary.CRLF).toByteVector).flatMap(byteVectorToByteStream) ++ p.body
 
     val parts = mp.parts
     val body = parts.tail.foldLeft(renderPart(_start, parts.head)) { (acc, part) =>
       acc ++ renderPart(_encapsulation, part)
-    } ++ Process.emit(_end)
-
+    } ++ byteVectorToByteStream(_end).covary[Task]
+    
     Task.now(Entity(body, None))
   }
 }
- */
+

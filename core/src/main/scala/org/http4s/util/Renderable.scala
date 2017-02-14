@@ -9,8 +9,9 @@ import scala.annotation.tailrec
 import scala.collection.immutable.BitSet
 
 import cats.data.NonEmptyList
-import fs2._
+import fs2.Chunk
 import org.http4s.batteries._
+import scodec.bits.ByteVector
 
 /** A type class that describes how to efficiently render a type
  * @tparam T the type which will be rendered
@@ -171,5 +172,21 @@ final case class ChunkWriter(
   override def append(double: Double): this.type  = append(double.toString)
   override def append(int: Int): this.type        = append(int.toString)
   override def append(long: Long): this.type      = append(long.toString)
+}
+
+/** [[Writer]] that will result in a `ByteVector`
+  * @param bv initial ByteVector`
+  */
+final case class ByteVectorWriter(private var bv: ByteVector = ByteVector.empty,
+                                  charset: Charset = StandardCharsets.UTF_8) extends Writer {
+
+  override def append(s: String): this.type       = { bv = bv ++ ByteVector(s.getBytes(charset)); this}
+  override def append(char: Char): this.type      = append(char.toString)
+  override def append(float: Float): this.type    = append(float.toString)
+  override def append(double: Double): this.type  = append(double.toString)
+  override def append(int: Int): this.type        = append(int.toString)
+  override def append(long: Long): this.type      = append(long.toString)
+
+  def toByteVector: ByteVector = bv
 }
 
