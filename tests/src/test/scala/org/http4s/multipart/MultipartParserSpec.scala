@@ -1,13 +1,11 @@
-// TODO fs2 port
-/*
 package org.http4s
 package multipart
 
 import org.http4s.headers._
 import org.specs2.mutable._
 
-import scalaz.{-\/, \/-, \/}
-import scalaz.stream.{Process, Process0}
+import fs2._
+import cats.implicits._
 
 import scodec.bits.ByteVector
 
@@ -50,24 +48,24 @@ object MultipartParserSpec extends Specification {
               |catch me if you can!
               |""".stripMargin)
 
-      def unspool(str: String): Process0[ByteVector] = {
+      def unspool(str: String): Stream[Task,ByteVector] = {
         if (str.isEmpty) {
-          halt
+          Stream.empty
         } else if (str.length <= Limit) {
-          emit(ByteVector view (str getBytes "ASCII"))
+          Stream.emit(ByteVector view (str getBytes "ASCII")).covary[Task]
         } else {
           val front = str.substring(0, Limit)
           val back = str.substring(Limit)
 
-          emit(ByteVector view (front getBytes "ASCII")) ++ unspool(back)
+          Stream.emit(ByteVector view (front getBytes "ASCII")) ++ unspool(back)
         }
       }
 
-      val results: Process0[Headers \/ ByteVector] = unspool(input) pipe MultipartParser.parse(boundary)
+      val results: Stream[Task, Either[Headers, ByteVector]] = unspool(input).through(MultipartParser.parse(boundary))
 
-      val (headers, bv) = results.toVector.foldLeft((Headers.empty, ByteVector.empty)) {
-        case ((hsAcc, bvAcc), \/-(bv)) => (hsAcc, bvAcc ++ bv)
-        case ((hsAcc, bvAcc), -\/(hs)) => (hsAcc ++ hs, bvAcc)
+      val (headers, bv) = results.runLog.unsafeRun.foldLeft((Headers.empty, ByteVector.empty)) {
+        case ((hsAcc, bvAcc), Right(bv)) => (hsAcc, bvAcc ++ bv)
+        case ((hsAcc, bvAcc), Left(hs)) => (hsAcc ++ hs, bvAcc)
       }
 
       headers mustEqual (expectedHeaders)
@@ -99,17 +97,17 @@ object MultipartParserSpec extends Specification {
               |catch me if you can!
               |""".stripMargin)
 
-      def unspool(str: String): Process0[ByteVector] = emit(ByteVector view (str getBytes "ASCII"))
+      def unspool(str: String): Stream[Task,ByteVector] = Stream.emit(ByteVector view (str getBytes "ASCII"))
 
-      val results: Process0[Headers \/ ByteVector] = unspool(input) pipe MultipartParser.parse(boundary)
+      val results: Stream[Task, Either[Headers,ByteVector]] = unspool(input).through(MultipartParser.parse(boundary))
 
-      val bytes = results.toVector collect {
-        case \/-(bv) => bv
+      val bytes = results.runLog.unsafeRun collect {
+        case Right(bv) => bv
       }
 
-      val (headers, bv) = results.toVector.foldLeft(Headers.empty, ByteVector.empty) {
-        case ((hsAcc, bvAcc), \/-(bv)) => (hsAcc, bvAcc ++ bv)
-        case ((hsAcc, bvAcc), -\/(hs)) => (hsAcc ++ hs, bvAcc)
+      val (headers, bv) = results.runLog.unsafeRun.foldLeft(Headers.empty, ByteVector.empty) {
+        case ((hsAcc, bvAcc), Right(bv)) => (hsAcc, bvAcc ++ bv)
+        case ((hsAcc, bvAcc), Left(hs)) => (hsAcc ++ hs, bvAcc)
       }
 
       headers mustEqual (expectedHeaders)
@@ -145,13 +143,13 @@ object MultipartParserSpec extends Specification {
               |catch me if you can!
               |""".stripMargin)
 
-      def unspool(str: String): Process0[ByteVector] = emit(ByteVector view (str getBytes "ASCII"))
+      def unspool(str: String): Stream[Task,ByteVector] = Stream.emit(ByteVector view (str getBytes "ASCII"))
 
-      val results: Process0[Headers \/ ByteVector] = unspool(input) pipe MultipartParser.parse(boundary)
+      val results: Stream[Task, Either[Headers, ByteVector]] = unspool(input).through(MultipartParser.parse(boundary))
 
-      val (headers, bv) = results.toVector.foldLeft(Headers.empty, ByteVector.empty) {
-        case ((hsAcc, bvAcc), \/-(bv)) => (hsAcc, bvAcc ++ bv)
-        case ((hsAcc, bvAcc), -\/(hs)) => (hsAcc ++ hs, ByteVector.empty)
+      val (headers, bv) = results.runLog.unsafeRun.foldLeft(Headers.empty, ByteVector.empty) {
+        case ((hsAcc, bvAcc), Right(bv)) => (hsAcc, bvAcc ++ bv)
+        case ((hsAcc, bvAcc), Left(hs)) => (hsAcc ++ hs, ByteVector.empty)
       }
 
       bv.decodeAscii mustEqual Right("bar")
@@ -168,11 +166,10 @@ object MultipartParserSpec extends Specification {
         |catch me if you can!""".stripMargin
       val input = ruinDelims(unprocessedInput)
 
-      def unspool(str: String): Process0[ByteVector] = emit(ByteVector view (str getBytes "ASCII"))
-      val results: Process0[Headers \/ ByteVector] = unspool(input) pipe MultipartParser.parse(boundary)
+      def unspool(str: String): Stream[Task, ByteVector] = Stream.emit(ByteVector view (str getBytes "ASCII"))
+      val results: Stream[Task, Either[Headers,ByteVector]] = unspool(input).through(MultipartParser.parse(boundary))
 
-      results.toVector must throwAn[MalformedMessageBodyFailure]
+      results.runLog.unsafeRun() must throwAn[MalformedMessageBodyFailure]
     }
   }
 }
- */
