@@ -17,7 +17,88 @@ object MultipartParser {
   private val CRLF = ByteVector('\r', '\n')
   private val DASHDASH = ByteVector('-', '-')
 
-  private final case class Out[+A](a: A, tail: Option[ByteVector] = None)
+  private[multipart] final case class Out[+A](a: A, tail: Option[ByteVector] = None)
+
+  private[multipart] val toByteVector : Pipe[Task, Byte, ByteVector] =
+    _.mapChunks(chunk => Chunk.singleton(ByteVector(chunk.toArray)))
+
+  private[multipart] val toBytes : Pipe[Task, ByteVector, Byte] = _.flatMap(bv => Stream.emits(bv.toSeq))
+
+  private[multipart] def extractlines[F[_]] : Pipe[F, ByteVector, ByteVector] = {
+
+    def linesFromByteVector(byteVector: ByteVector): (Vector[ByteVector], ByteVector) = {
+      var i = 0L
+      var start = 0L
+      var out = Vector.empty[ByteVector]
+      while (i < byteVector.size) {
+        byteVector(i).toChar match {
+          case '\n' =>
+            out = out :+ byteVector.slice(start, i)
+            start = i + 1L
+          case '\r' =>
+            if (i + 1L < byteVector.size && byteVector.get(i + 1L).toChar == '\n') {
+
+              out = out :+ byteVector.slice(start, i)
+              start = i + 2L
+              i += 1L
+            }
+          case c =>
+            ()
+        }
+        i += 1L
+      }
+      val carry = byteVector.slice(start, byteVector.size)
+      (out, carry)
+    }
+
+    def extractLines(buffer: Vector[ByteVector],
+                     chunk: Chunk[ByteVector],
+                     pendingLineFeed: Boolean
+                    ): (Chunk[ByteVector], Vector[ByteVector], Boolean) = {
+
+      def loop(remainingInput: Vector[ByteVector],
+               buffer: Vector[ByteVector],
+               output: Vector[ByteVector],
+               pendingLineFeed: Boolean
+              ): (Chunk[ByteVector], Vector[ByteVector], Boolean) = {
+        if (remainingInput.isEmpty) {
+          (Chunk.indexedSeq(output), buffer, pendingLineFeed)
+        } else {
+          var next = remainingInput.head
+          if (pendingLineFeed) {
+            if (next.headOption.exists(_.toChar == '\n')) {
+              val out : ByteVector = buffer.init.foldRight(buffer.last.init)(_ ++ _)
+              loop(next.tail +: remainingInput.tail, Vector.empty, output :+ out, false)
+            } else {
+              loop(remainingInput, buffer, output, false)
+            }
+          } else {
+            val (out, carry) = linesFromByteVector(next)
+            val pendingLF = if (carry.nonEmpty) carry.last.toChar == '\r' else pendingLineFeed
+
+            loop(remainingInput.tail,
+              if (out.isEmpty) buffer :+ carry else Vector(carry),
+              if (out.isEmpty) output else output ++ (buffer.foldRight(out.head)(_ ++ _) +: out.tail) , pendingLF
+            )
+          }
+        }
+      }
+      loop(chunk.toVector, buffer, Vector.empty, pendingLineFeed)
+    }
+
+    def go(buffer: Vector[ByteVector], pendingLineFeed: Boolean): Handle[F, ByteVector] => Pull[F, ByteVector, Unit] = {
+      _.receiveOption {
+        case Some((chunk, h)) =>
+          val (toOutput, newBuffer, newPendingLineFeed) = extractLines(buffer, chunk, pendingLineFeed)
+          Pull.output(toOutput) >> go(newBuffer, newPendingLineFeed)(h)
+        case None if buffer.nonEmpty => Pull.output1(buffer.foldLeft(ByteVector.empty)(_ ++ _))
+        case None => Pull.done
+      }
+    }
+    _.pull(go(Vector.empty, false))
+  }
+
+
 
   def parse(boundary: Boundary): Pipe[Task, Byte, Either[Headers, Byte]] = { s =>
     val boundaryBytes = boundary.toByteVector
