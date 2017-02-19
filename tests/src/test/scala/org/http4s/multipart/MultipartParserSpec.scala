@@ -59,11 +59,10 @@ object MultipartParserSpec extends Specification {
         }
       }
 
+
       val results: Stream[Task, Either[Headers, Byte]] =
         unspool(input)
-        .through(MultipartParser.parse(boundary))
-
-
+          .through(MultipartParser.parse(boundary))
 
       val (headers, byteStream) = results.runLog.map{_.foldLeft((Headers.empty, Stream.empty[Task, Byte])) {
         case ((hsAcc, bsAcc), Right(byte)) => (hsAcc, bsAcc ++ emit(byte))
@@ -72,7 +71,8 @@ object MultipartParserSpec extends Specification {
 
 
       headers mustEqual (expectedHeaders)
-      byteStream.runLog.attemptFold(e => Left(e), v => Right(v.foldLeft("")(_ + _))).unsafeRun() mustEqual Right(expected)
+      byteStream.runLog.unsafeRun().foldLeft("")(_ + _.toChar) mustEqual expected
+
     }
 
     "produce the body from a single part input without limit" in {
@@ -111,8 +111,10 @@ object MultipartParserSpec extends Specification {
         case ((hsAcc, bsAcc), Left(hs)) => (hsAcc ++ hs, bsAcc)
       }
 
-      headers mustEqual (expectedHeaders)
-      byteStream.runLog.attemptFold(e => Left(e), v => Right(v.foldLeft("")(_ + _))).unsafeRun() mustEqual Right(expected)
+
+      headers mustEqual expectedHeaders
+
+      byteStream.runLog.unsafeRun().foldLeft("")(_ + _.toChar) mustEqual expected
     }
 
     "produce the body from a two-part input" in {
@@ -153,7 +155,7 @@ object MultipartParserSpec extends Specification {
         case ((hsAcc, bsAcc), Left(hs)) => (hsAcc ++ hs, bsAcc)
       }
 
-      byteStream.runLog.attemptFold(e => Left(e), v => Right(v.foldLeft("")(_ + _))).unsafeRun() mustEqual Right(expected)
+      byteStream.runLog.unsafeRun().foldLeft("")(_ + _.toChar) mustEqual expected
       headers mustEqual expectedHeaders
     }
 
@@ -175,4 +177,3 @@ object MultipartParserSpec extends Specification {
     }
   }
 }
-

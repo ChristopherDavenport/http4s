@@ -108,7 +108,8 @@ class MultipartSpec extends Specification with DisjunctionMatchers {
     val decoded    = EntityDecoder[Multipart].decode(request, true)
     val result     = decoded.value.unsafeRun
 
-    result must beRight.like { case mp => multipart === mp }
+    result must beRight.like { case mp => multipart == mp }
+
   }
 
   def decodeMultipartRequestWithContentTypes = {
