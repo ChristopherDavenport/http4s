@@ -55,7 +55,6 @@ lazy val core = libraryProject("core")
     buildInfoKeys := Seq[BuildInfoKey](version, scalaVersion, apiVersion),
     buildInfoPackage := organization.value,
     libraryDependencies ++= Seq(
-      fs2Cats,
       fs2Io,
       http4sWebsocket,
       log4s,
@@ -561,8 +560,6 @@ lazy val commonSettings = Seq(
     else Seq.empty
   },
   libraryDependencies ++= Seq(
-    catsLaws,
-    catsKernelLaws,
     discipline,
     logbackClassic,
     scalacheck, // 0.13.3 fixes None.get

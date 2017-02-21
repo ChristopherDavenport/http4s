@@ -40,13 +40,10 @@ object Http4sBuild {
   lazy val argonaut            = "io.argonaut"              %% "argonaut"                % "6.2-RC2"
   lazy val asyncHttpClient     = "org.asynchttpclient"       % "async-http-client"       % "2.0.24"
   lazy val blaze               = "org.http4s"               %% "blaze-http"              % "0.12.4"
-  lazy val catsKernelLaws      = "org.typelevel"            %% "cats-kernel-laws"        % catsLaws.revision
-  lazy val catsLaws            = "org.typelevel"            %% "cats-laws"               % "0.9.0"
   lazy val circeGeneric        = "io.circe"                 %% "circe-generic"           % circeJawn.revision
   lazy val circeJawn           = "io.circe"                 %% "circe-jawn"              % "0.7.0"
   lazy val cryptobits          = "org.reactormonk"          %% "cryptobits"              % "1.1"
   lazy val discipline          = "org.typelevel"            %% "discipline"              % "0.7.2"
-  lazy val fs2Cats             = "co.fs2"                   %% "fs2-cats"                % "0.3.0"
   lazy val fs2Io               = "co.fs2"                   %% "fs2-io"                  % "0.9.4"
   lazy val gatlingTest         = "io.gatling"                % "gatling-test-framework"  % "2.2.3"
   lazy val gatlingHighCharts   = "io.gatling.highcharts"     % "gatling-charts-highcharts" % gatlingTest.revision
