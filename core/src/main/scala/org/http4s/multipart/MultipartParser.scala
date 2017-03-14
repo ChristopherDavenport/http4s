@@ -111,43 +111,43 @@ object MultipartParser {
     Either.fromOption(headerM.map(Headers(_)), bv).swap
   }
 
-//  private[multipart] def addDelimiters[F[_]](delim: ByteVector):
-//    Pipe[F, Either[Headers, ByteVector], Either[Headers, ByteVector]] = {
-//    def go(optBV: Option[ByteVector]): Handle[F, Either[Headers, ByteVector]] => Pull[F, Either[Headers, ByteVector], Unit] = {
-//      _.receive1{
-//        case (r@Right(b1), h) =>
-//          h.receive1Option {
-//            case Some((Right(b2), h)) => optBV match {
-//              case Some(bv) =>
-//                Pull.output1(Either.right(bv ++ delim)) >> Pull.output1(Either.right(b1 ++ delim)) >> go(Option(b2))(h)
-//              case None =>
-//                Pull.output1(Either.right(b1 ++ delim)) >> go(Option(b2))(h)
-//            }
-//            case Some((l@Left(_), h)) => optBV match {
-//              case Some(bv) =>
-//                Pull.output1(Either.right(bv ++ delim)) >> Pull.output1(Either.right(b1)) >> Pull.output1(l) >> go(None)(h)
-//              case None =>
-//                Pull.output1(Either.right(b1)) >> Pull.output1(l) >> go(None)(h)
-//            }
-//            case None => optBV match {
-//              case Some(bv) => Pull.output1(Either.right(bv ++ delim)) >> Pull.output1(Either.right(b1))
-//              case None => Pull.output1(Either.right(b1))
-//            }
-//          }
-//        case (l@Left(_), h) => optBV match {
-//          case Some(bv) =>
-//            Pull.output1(Either.right(bv)) >> Pull.output1(l) >> go(None)(h)
-//          case None => Pull.output1(l) >> go(None)(h)
-//        }
-//      }
-//    }
-//    _.pull(go(None))
-//  }
+  private[multipart] def addDelimiters[F[_]](delim: ByteVector):
+    Pipe[F, Either[Headers, ByteVector], Either[Headers, ByteVector]] = {
+    def go(optBV: Option[ByteVector]): Handle[F, Either[Headers, ByteVector]] => Pull[F, Either[Headers, ByteVector], Unit] = {
+      _.receive1{
+        case (r@Right(b1), h) =>
+          h.receive1Option {
+            case Some((Right(b2), h)) => optBV match {
+              case Some(bv) =>
+                Pull.output1(Either.right(bv ++ delim)) >> Pull.output1(Either.right(b1 ++ delim)) >> go(Option(b2))(h)
+              case None =>
+                Pull.output1(Either.right(b1 ++ delim)) >> go(Option(b2))(h)
+            }
+            case Some((l@Left(_), h)) => optBV match {
+              case Some(bv) =>
+                Pull.output1(Either.right(bv ++ delim)) >> Pull.output1(Either.right(b1)) >> Pull.output1(l) >> go(None)(h)
+              case None =>
+                Pull.output1(Either.right(b1)) >> Pull.output1(l) >> go(None)(h)
+            }
+            case None => optBV match {
+              case Some(bv) => Pull.output1(Either.right(bv ++ delim)) >> Pull.output1(Either.right(b1))
+              case None => Pull.output1(Either.right(b1))
+            }
+          }
+        case (l@Left(_), h) => optBV match {
+          case Some(bv) =>
+            Pull.output1(Either.right(bv)) >> Pull.output1(l) >> go(None)(h)
+          case None => Pull.output1(l) >> go(None)(h)
+        }
+      }
+    }
+    _.pull(go(None))
+  }
 
-//  def addDelimiters(content: ByteVector, delim: ByteVector): ByteVector = content ++ delim
-//  def eitherAddDelimiters(content: Either[Headers, ByteVector], delim: ByteVector): Either[Headers, ByteVector] = {
-//    content.bimap(h => h, addDelimiters(_, delim))
-//  }
+  def addDelimiters(content: ByteVector, delim: ByteVector): ByteVector = content ++ delim
+  def eitherAddDelimiters(content: Either[Headers, ByteVector], delim: ByteVector): Either[Headers, ByteVector] = {
+    content.bimap(h => h, addDelimiters(_, delim))
+  }
 
 
   def parse(boundary: Boundary): Pipe[Task, Byte, Either[Headers, Byte]] = { s =>
@@ -163,7 +163,7 @@ object MultipartParser {
       .filter(_ != startLine)
       .filter(_ != endLine)
       .through(parseHeaders)
-//      .map(eitherAddDelimiters(_, CRLF))
+      .map(eitherAddDelimiters(_, CRLF))
       .through(eitherByteVectorToBytes)
     
   }
