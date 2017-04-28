@@ -11,7 +11,6 @@ import scala.util.Random
 import fs2._
 import fs2.Stream._
 import fs2.io._
-import fs2.text._
 import org.http4s.EntityEncoder._
 import org.http4s.MediaType._
 import org.http4s.headers._
@@ -30,7 +29,7 @@ object Part {
 
   def formData(name: String, value: String, headers: Header*): Part =
     Part(`Content-Disposition`("form-data", Map("name" -> name)) +: headers,
-      emit(value).through(utf8Encode))
+      Stream.emit(value).through(text.utf8Encode).covary[Task])
 
   def fileData(name: String, file: File, headers: Header*): Part =
     fileData(name, file.getName, new FileInputStream(file), headers:_*)

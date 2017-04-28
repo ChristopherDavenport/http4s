@@ -1,13 +1,9 @@
-// TODO fs2 port
-/*
 package org.http4s
 package multipart
 
 import org.http4s.headers._
 import org.specs2.mutable._
-
-import scalaz.{-\/, \/-, \/}
-import scalaz.stream.{Process, Process0}
+import fs2._
 
 import scodec.bits.ByteVector
 
@@ -15,6 +11,9 @@ object MultipartParserSpec extends Specification {
   import Process._
 
   val boundary = Boundary("_5PHqf8_Pl1FCzBuT5o_mVZg36k67UYI")
+
+  val unspool : String => Int => Stream[Pure, Byte] = input => chunkSize =>
+    Stream.emit(input).through(text.utf8Encode).rechunkN(chunkSize).covary[Pure]
 
   def ruinDelims(str: String) = augmentString(str) flatMap {
     case '\n' => "\r\n"
@@ -175,4 +174,3 @@ object MultipartParserSpec extends Specification {
     }
   }
 }
- */
