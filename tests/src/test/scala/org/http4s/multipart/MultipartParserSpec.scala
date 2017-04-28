@@ -3,17 +3,16 @@ package multipart
 
 import org.http4s.headers._
 import org.specs2.mutable._
+
 import fs2._
+import fs2.Stream._
+import cats.syntax.either._
 
 import scodec.bits.ByteVector
 
 object MultipartParserSpec extends Specification {
-  import Process._
 
   val boundary = Boundary("_5PHqf8_Pl1FCzBuT5o_mVZg36k67UYI")
-
-  val unspool : String => Int => Stream[Pure, Byte] = input => chunkSize =>
-    Stream.emit(input).through(text.utf8Encode).rechunkN(chunkSize).covary[Pure]
 
   def ruinDelims(str: String) = augmentString(str) flatMap {
     case '\n' => "\r\n"
@@ -26,15 +25,15 @@ object MultipartParserSpec extends Specification {
       val Limit = 15
 
       val unprocessedInput = """--_5PHqf8_Pl1FCzBuT5o_mVZg36k67UYI
-        |Content-Disposition: form-data; name="upload"; filename="integration.txt"
-        |Content-Type: application/octet-stream
-        |Content-Transfer-Encoding: binary
-        |
-        |this is a test
-        |here's another test
-        |catch me if you can!
-        |
-        |--_5PHqf8_Pl1FCzBuT5o_mVZg36k67UYI--""".stripMargin
+                               |Content-Disposition: form-data; name="upload"; filename="integration.txt"
+                               |Content-Type: application/octet-stream
+                               |Content-Transfer-Encoding: binary
+                               |
+                               |this is a test
+                               |here's another test
+                               |catch me if you can!
+                               |
+                               |--_5PHqf8_Pl1FCzBuT5o_mVZg36k67UYI--""".stripMargin
 
       val input = ruinDelims(unprocessedInput)
 
@@ -45,45 +44,48 @@ object MultipartParserSpec extends Specification {
       )
 
       val expected = ruinDelims("""this is a test
-              |here's another test
-              |catch me if you can!
-              |""".stripMargin)
+                                  |here's another test
+                                  |catch me if you can!
+                                  |""".stripMargin)
 
-      def unspool(str: String): Process0[ByteVector] = {
-        if (str.isEmpty) {
-          halt
-        } else if (str.length <= Limit) {
-          emit(ByteVector view (str getBytes "ASCII"))
+      def unspool(str: String): Stream[Task, Byte] = {
+        if (str.length <= Limit) {
+          emits(str getBytes "ASCII")
         } else {
           val front = str.substring(0, Limit)
           val back = str.substring(Limit)
 
-          emit(ByteVector view (front getBytes "ASCII")) ++ unspool(back)
+          emits(front getBytes "ASCII") ++ unspool(back)
         }
       }
 
-      val results: Process0[Headers \/ ByteVector] = unspool(input) pipe MultipartParser.parse(boundary)
 
-      val (headers, bv) = results.toVector.foldLeft((Headers.empty, ByteVector.empty)) {
-        case ((hsAcc, bvAcc), \/-(bv)) => (hsAcc, bvAcc ++ bv)
-        case ((hsAcc, bvAcc), -\/(hs)) => (hsAcc ++ hs, bvAcc)
-      }
+      val results: Stream[Task, Either[Headers, Byte]] =
+        unspool(input)
+          .through(MultipartParser.parse(boundary))
+
+      val (headers, byteStream) = results.runLog.map{_.foldLeft((Headers.empty, Stream.empty[Task, Byte])) {
+        case ((hsAcc, bsAcc), Right(byte)) => (hsAcc, bsAcc ++ emit(byte))
+        case ((hsAcc, bsAcc), Left(hs)) => (hsAcc ++ hs, bsAcc)
+      }}.unsafeRun()
+
 
       headers mustEqual (expectedHeaders)
-      bv.decodeAscii mustEqual Right(expected)
+      byteStream.runLog.unsafeRun().foldLeft("")(_ + _.toChar) mustEqual expected
+
     }
 
     "produce the body from a single part input without limit" in {
       val unprocessedInput = """--_5PHqf8_Pl1FCzBuT5o_mVZg36k67UYI
-        |Content-Disposition: form-data; name="upload"; filename="integration.txt"
-        |Content-Type: application/octet-stream
-        |Content-Transfer-Encoding: binary
-        |
-        |this is a test
-        |here's another test
-        |catch me if you can!
-        |
-        |--_5PHqf8_Pl1FCzBuT5o_mVZg36k67UYI--""".stripMargin
+                               |Content-Disposition: form-data; name="upload"; filename="integration.txt"
+                               |Content-Type: application/octet-stream
+                               |Content-Transfer-Encoding: binary
+                               |
+                               |this is a test
+                               |here's another test
+                               |catch me if you can!
+                               |
+                               |--_5PHqf8_Pl1FCzBuT5o_mVZg36k67UYI--""".stripMargin
 
       val input = ruinDelims(unprocessedInput)
 
@@ -94,42 +96,42 @@ object MultipartParserSpec extends Specification {
       )
 
       val expected = ruinDelims("""this is a test
-              |here's another test
-              |catch me if you can!
-              |""".stripMargin)
+                                  |here's another test
+                                  |catch me if you can!
+                                  |""".stripMargin)
 
-      def unspool(str: String): Process0[ByteVector] = emit(ByteVector view (str getBytes "ASCII"))
+      def unspool(str: String): Stream[Task, Byte] = emits(str getBytes "ASCII")
 
-      val results: Process0[Headers \/ ByteVector] = unspool(input) pipe MultipartParser.parse(boundary)
+      val results: Stream[Task, Either[Headers, Byte]] = unspool(input) through MultipartParser.parse(boundary)
 
-      val bytes = results.toVector collect {
-        case \/-(bv) => bv
+      val bytes = results.runLog.unsafeRun()
+
+      val (headers, byteStream) = results.runLog.unsafeRun().foldLeft(Headers.empty, Stream.empty[Task, Byte]) {
+        case ((hsAcc, bsAcc), Right(byte)) => (hsAcc, bsAcc ++ emit(byte))
+        case ((hsAcc, bsAcc), Left(hs)) => (hsAcc ++ hs, bsAcc)
       }
 
-      val (headers, bv) = results.toVector.foldLeft(Headers.empty, ByteVector.empty) {
-        case ((hsAcc, bvAcc), \/-(bv)) => (hsAcc, bvAcc ++ bv)
-        case ((hsAcc, bvAcc), -\/(hs)) => (hsAcc ++ hs, bvAcc)
-      }
 
-      headers mustEqual (expectedHeaders)
-      bv.decodeAscii mustEqual Right(expected)
+      headers mustEqual expectedHeaders
+
+      byteStream.runLog.unsafeRun().foldLeft("")(_ + _.toChar) mustEqual expected
     }
 
     "produce the body from a two-part input" in {
       val unprocessedInput = """--_5PHqf8_Pl1FCzBuT5o_mVZg36k67UYI
-        |Content-Disposition: form-data; name="upload"; filename="integration.txt"
-        |Content-Type: application/octet-stream
-        |Content-Transfer-Encoding: binary
-        |
-        |this is a test
-        |here's another test
-        |catch me if you can!
-        |
-        |--_5PHqf8_Pl1FCzBuT5o_mVZg36k67UYI
-        |Content-Disposition: form-data; name="foo"
-        |
-        |bar
-        |--_5PHqf8_Pl1FCzBuT5o_mVZg36k67UYI--""".stripMargin
+                               |Content-Disposition: form-data; name="upload"; filename="integration.txt"
+                               |Content-Type: application/octet-stream
+                               |Content-Transfer-Encoding: binary
+                               |
+                               |this is a test
+                               |here's another test
+                               |catch me if you can!
+                               |
+                               |--_5PHqf8_Pl1FCzBuT5o_mVZg36k67UYI
+                               |Content-Disposition: form-data; name="foo"
+                               |
+                               |bar
+                               |--_5PHqf8_Pl1FCzBuT5o_mVZg36k67UYI--""".stripMargin
 
       val input = ruinDelims(unprocessedInput)
 
@@ -140,37 +142,38 @@ object MultipartParserSpec extends Specification {
       )
 
       val expected = ruinDelims("""this is a test
-              |here's another test
-              |catch me if you can!
-              |""".stripMargin)
+                                  |here's another test
+                                  |catch me if you can!
+                                  |""".stripMargin)
 
-      def unspool(str: String): Process0[ByteVector] = emit(ByteVector view (str getBytes "ASCII"))
+      def unspool(str: String): Stream[Task, Byte] = emits(str getBytes "ASCII")
 
-      val results: Process0[Headers \/ ByteVector] = unspool(input) pipe MultipartParser.parse(boundary)
+      val results: Stream[Task, Either[Headers, Byte]] = unspool(input) through MultipartParser.parse(boundary)
 
-      val (headers, bv) = results.toVector.foldLeft(Headers.empty, ByteVector.empty) {
-        case ((hsAcc, bvAcc), \/-(bv)) => (hsAcc, bvAcc ++ bv)
-        case ((hsAcc, bvAcc), -\/(hs)) => (hsAcc ++ hs, ByteVector.empty)
+      val (headers, byteStream) = results.runLog.unsafeRun().foldLeft(Headers.empty, Stream.empty[Task, Byte]) {
+        case ((hsAcc, bsAcc), Right(byte)) => (hsAcc, bsAcc ++ emit(byte))
+        case ((hsAcc, bsAcc), Left(hs)) => (hsAcc ++ hs, bsAcc)
       }
 
-      bv.decodeAscii mustEqual Right("bar")
+      byteStream.runLog.unsafeRun().foldLeft("")(_ + _.toChar) mustEqual expected
+      headers mustEqual expectedHeaders
     }
 
     "fail with an MalformedMessageBodyFailure without an end line" in {
       val unprocessedInput = """--_5PHqf8_Pl1FCzBuT5o_mVZg36k67UYI
-        |Content-Disposition: form-data; name="upload"; filename="integration.txt"
-        |Content-Type: application/octet-stream
-        |Content-Transfer-Encoding: binary
-        |
-        |this is a test
-        |here's another test
-        |catch me if you can!""".stripMargin
+                               |Content-Disposition: form-data; name="upload"; filename="integration.txt"
+                               |Content-Type: application/octet-stream
+                               |Content-Transfer-Encoding: binary
+                               |
+                               |this is a test
+                               |here's another test
+                               |catch me if you can!""".stripMargin
       val input = ruinDelims(unprocessedInput)
 
-      def unspool(str: String): Process0[ByteVector] = emit(ByteVector view (str getBytes "ASCII"))
-      val results: Process0[Headers \/ ByteVector] = unspool(input) pipe MultipartParser.parse(boundary)
+      def unspool(str: String): Stream[Task, Byte] = emits(str getBytes "ASCII")
+      val results: Stream[Task, Either[Headers, Byte]] = unspool(input) through MultipartParser.parse(boundary)
 
-      results.toVector must throwAn[MalformedMessageBodyFailure]
+      results.runLog.unsafeRun() must throwAn[MalformedMessageBodyFailure]
     }
   }
 }

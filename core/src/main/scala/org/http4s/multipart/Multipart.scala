@@ -29,7 +29,7 @@ object Part {
 
   def formData(name: String, value: String, headers: Header*): Part =
     Part(`Content-Disposition`("form-data", Map("name" -> name)) +: headers,
-      Stream.emit(value).through(text.utf8Encode).covary[Task])
+      Stream.emit(value).covary[Task].through(text.utf8Encode))
 
   def fileData(name: String, file: File, headers: Header*): Part =
     fileData(name, file.getName, new FileInputStream(file), headers:_*)

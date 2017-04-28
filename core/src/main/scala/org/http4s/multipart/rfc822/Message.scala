@@ -68,6 +68,6 @@ class MessagePart {
     * word        =  atom / quoted-string
     */
 
-  case class Body[F](bytes: Stream[F, Byte])
+//  case class Body[F](bytes: Stream[F, Byte])
 
 }
