@@ -7,13 +7,11 @@ import scala.concurrent.{ExecutionContext, Future}
 import fs2._
 import org.http4s.blaze.pipeline.TailStage
 import org.http4s.util.chunk._
-import org.log4s.getLogger
 
 class IdentityWriter(private var headers: ByteBuffer, size: Long, out: TailStage[ByteBuffer])
                     (implicit val ec: ExecutionContext)
     extends EntityBodyWriter {
 
-  private[this] val logger = getLogger
 
   private var bodyBytesWritten = 0L
 
@@ -25,7 +23,6 @@ class IdentityWriter(private var headers: ByteBuffer, size: Long, out: TailStage
       // never write past what we have promised using the Content-Length header
       val msg = s"Will not write more bytes than what was indicated by the Content-Length header ($size)"
 
-      logger.warn(msg)
 
       // TODO fs2 port shady .toInt... loop?
       writeBodyChunk(chunk.take((size - bodyBytesWritten).toInt), true) flatMap {_ =>
@@ -54,7 +51,6 @@ class IdentityWriter(private var headers: ByteBuffer, size: Long, out: TailStage
     else {
       val msg = s"Expected `Content-Length: $size` bytes, but only $total were written."
 
-      logger.warn(msg)
 
       writeBodyChunk(chunk, flush = true) flatMap {_ =>
         Future.failed(new IllegalStateException(msg))

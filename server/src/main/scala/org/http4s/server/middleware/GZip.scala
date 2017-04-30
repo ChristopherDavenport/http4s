@@ -9,10 +9,8 @@ import fs2.Stream._
 import fs2.compress._
 import fs2.interop.cats._
 import org.http4s.headers._
-import org.log4s.getLogger
 
 object GZip {
-  private[this] val logger = getLogger
   // TODO: It could be possible to look for Task.now type bodies, and change the Content-Length header after
   // TODO      zipping and buffering all the input. Just a thought.
   def apply(service: HttpService, bufferSize: Int = 32 * 1024, level: Int = Deflater.DEFAULT_COMPRESSION): HttpService = Service.lift {
@@ -23,7 +21,6 @@ object GZip {
           service.map {
             case resp: Response =>
               if (isZippable(resp)) {
-                logger.trace("GZip middleware encoding content")
                 // Need to add the Gzip header
                 val b = chunk(header) ++
                   resp.body.through(deflate(

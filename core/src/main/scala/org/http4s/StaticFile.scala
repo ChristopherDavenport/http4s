@@ -13,11 +13,8 @@ import fs2.util.Suspendable
 import org.http4s.Status.NotModified
 import org.http4s.headers._
 import org.http4s.util.threads.DefaultPool
-import org.log4s.getLogger
 
-// TODO: consider using the new scalaz.stream.nio.file operations
 object StaticFile {
-  private[this] val logger = getLogger
 
   val DefaultBufferSize = 10240
 
@@ -66,7 +63,7 @@ object StaticFile {
         r   <- req
         h   <- r.headers.get(`If-Modified-Since`)
         exp  = h.date.compareTo(lastModified) < 0
-        _    = logger.trace(s"Expired: $exp. Request age: ${h.date}, Modified: $lastModified")
+//        _    = logger.trace(s"Expired: $exp. Request age: ${h.date}, Modified: $lastModified")
         nm   = Response(NotModified) if !exp
       } yield nm
 
@@ -95,7 +92,7 @@ object StaticFile {
           attributes = AttributeMap.empty.put(staticFileKey, f)
         )
 
-        logger.trace(s"Static file generated response: $r")
+//        logger.trace(s"Static file generated response: $r")
         Some(r)
       }
     } else {

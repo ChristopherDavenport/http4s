@@ -21,10 +21,9 @@ import org.reactivestreams.Publisher
 import scala.collection.JavaConverters._
 import scala.concurrent.ExecutionContext
 
-import org.log4s.getLogger
+
 
 object AsyncHttpClient {
-  private[this] val log = getLogger
 
   val defaultConfig = new DefaultAsyncHttpClientConfig.Builder()
     .setMaxConnectionsPerHost(200)

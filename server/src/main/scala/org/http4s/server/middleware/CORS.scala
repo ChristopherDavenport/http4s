@@ -9,7 +9,6 @@ import scala.concurrent.duration._
 import cats.implicits._
 import fs2._
 import org.http4s.headers._
-import org.log4s.getLogger
 
 /**
   * CORS middleware config options.
@@ -27,7 +26,6 @@ final case class CORSConfig(
 )
 
 object CORS {
-  private[CORS] val logger = getLogger
 
   def DefaultCORSConfig = CORSConfig(
     anyOrigin = true,
@@ -69,20 +67,17 @@ object CORS {
 
     (req.method, req.headers.get(Origin), req.headers.get(`Access-Control-Request-Method`)) match {
       case (OPTIONS, Some(origin), Some(acrm)) if allowCORS(origin, acrm) =>
-        logger.debug(s"Serving OPTIONS with CORS headers for ${acrm} ${req.uri}")
         Task.now(createOptionsResponse(origin, acrm))
       case (_, Some(origin), _) =>
         if (allowCORS(origin, Header("Access-Control-Request-Method", req.method.renderString))) {
           service(req).map {
             case resp: Response =>
-              logger.debug(s"Adding CORS headers to ${req.method} ${req.uri}")
               corsHeaders(origin.value, req.method.renderString)(resp)
             case Pass =>
               Pass
           }
         }
         else {
-          logger.debug(s"CORS headers were denied for ${req.method} ${req.uri}")
           service(req)
         }
       case _ =>

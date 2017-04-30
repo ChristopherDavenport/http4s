@@ -5,7 +5,6 @@ package middleware
 import scala.concurrent.duration._
 import scala.math.{pow, min, random}
 import org.http4s.Status._
-import org.log4s.getLogger
 import fs2.Task
 
 import scala.Either
@@ -14,7 +13,6 @@ import scala.Left
 
 object Retry {
 
-  private[this] val logger = getLogger
 
   private[this] val RetriableStatuses = Set(
     RequestTimeout,
@@ -32,10 +30,8 @@ object Retry {
         case Right(dr @ DisposableResponse(Response(status, _, _, _, _), _)) if RetriableStatuses(status) =>
           backoff(attempts) match {
             case Some(duration) =>
-              logger.info(s"Request ${req} has failed on attempt #${attempts} with reason ${status}. Retrying after ${duration}.")
               dr.dispose.flatMap(_ => nextAttempt(req, attempts, duration))
             case None =>
-              logger.info(s"Request ${req} has failed on attempt #${attempts} with reason ${status}. Giving up.")
               Task.now(dr)
           }
         case Right(dr) =>
@@ -43,11 +39,9 @@ object Retry {
         case Left(e) =>
           backoff(attempts) match {
             case Some(duration) =>
-              logger.error(e)(s"Request ${req} threw an exception on attempt #${attempts} attempts. Retrying after ${duration}.")
               nextAttempt(req, attempts, duration)
             case None =>
               // info instead of error(e), because e is not discarded
-              logger.info(s"Request ${req} threw an exception on attempt #${attempts} attempts. Giving up.")
               Task.fail(e)
           }
       }

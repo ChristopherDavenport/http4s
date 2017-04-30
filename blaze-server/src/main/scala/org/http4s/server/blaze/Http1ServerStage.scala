@@ -47,7 +47,7 @@ private class Http1ServerStage(service: HttpService,
 {
   // micro-optimization: unwrap the service and call its .run directly
   private[this] val serviceFn = service.run
-  private[this] val parser = new Http1ServerParser(logger, maxRequestLineLen, maxHeadersLen)
+  private[this] val parser = new Http1ServerParser(maxRequestLineLen, maxHeadersLen)
 
   protected val ec = ExecutionContext.fromExecutorService(pool)
 

@@ -16,7 +16,6 @@ import fs2.{Strategy, Stream, Task}
  */
 @deprecated("Prefer org.http4s.util.StreamApp, where main returns a Stream. You can return a Stream that runs forever from a ServerBuilder with `.serve`. Use `Stream.bracket` to compose resources in a simpler way than overriding `shutdown`.", "0.16")
 trait ServerApp extends StreamApp {
-  private[this] val logger = org.log4s.getLogger
 
   /** Return a server to run */
   def server(args: List[String]): Task[Server]

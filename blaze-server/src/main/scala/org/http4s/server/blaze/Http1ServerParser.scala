@@ -9,11 +9,9 @@ import scala.util.Either
 import cats.data._
 import cats.implicits._
 import fs2._
-import org.log4s.Logger
 import org.http4s.ParseResult.parseResultMonad
 
-private final class Http1ServerParser(logger: Logger,
-                                      maxRequestLine: Int,
+private final class Http1ServerParser(maxRequestLine: Int,
                                       maxHeadersLen: Int)
   extends blaze.http.http_parser.Http1ServerParser(maxRequestLine, maxHeadersLen, 2*1024) {
 
@@ -60,7 +58,6 @@ private final class Http1ServerParser(logger: Logger,
   }
 
   override def submitRequestLine(methodString: String, uri: String, scheme: String, majorversion: Int, minorversion: Int): Boolean = {
-    logger.trace(s"Received request($methodString $uri $scheme/$majorversion.$minorversion)")
     this.uri = uri
     this.method = methodString
     this.major = majorversion
@@ -70,7 +67,6 @@ private final class Http1ServerParser(logger: Logger,
 
   /////////////////// Stateful methods for the HTTP parser ///////////////////
   override protected def headerComplete(name: String, value: String) = {
-    logger.trace(s"Received header '$name: $value'")
     headers += Header(name, value)
     false
   }

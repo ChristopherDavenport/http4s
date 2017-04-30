@@ -8,7 +8,6 @@ import fs2._
 import fs2.interop.cats._
 import fs2.Stream._
 import org.http4s.util.chunk._
-import org.log4s.getLogger
 
 /** [[CacheStrategy]] that will cache __all__ [[Response]] bodies in local memory
   *
@@ -16,18 +15,15 @@ import org.log4s.getLogger
   * to avoid disk access.
   */
 class MemoryCache extends CacheStrategy {
-  private val logger = getLogger
   private val cacheMap = new ConcurrentHashMap[String, Response]()
 
   override def cache(uriPath: String, resp: Response): Task[Response] = {
     if (resp.status == Status.Ok) {
       Option(cacheMap.get(uriPath)) match {
         case Some(r) if r.headers.toList == resp.headers.toList =>
-          logger.debug(s"Cache hit: $resp")
           Task.now(r)
 
         case _ =>
-          logger.debug(s"Cache miss: $resp")
           collectResource(uriPath, resp) /* otherwise cache the response */
       }
     }

@@ -12,7 +12,6 @@ import fs2.interop.cats._
 import org.http4s.headers.`Transfer-Encoding`
 import org.http4s.server._
 import org.http4s.util.threads.DefaultPool
-import org.log4s.getLogger
 
 import scala.collection.JavaConverters._
 import scala.concurrent.duration.Duration
@@ -23,7 +22,6 @@ class Http4sServlet(service: HttpService,
                     private[this] var servletIo: ServletIo = BlockingServletIo(DefaultChunkSize))
   extends HttpServlet
 {
-  private[this] val logger = getLogger
 
   private val asyncTimeoutMillis = if (asyncTimeout.isFinite()) asyncTimeout.toMillis else -1 // -1 == Inf
 
@@ -35,7 +33,6 @@ class Http4sServlet(service: HttpService,
   override def init(config: ServletConfig): Unit = {
     val servletContext = config.getServletContext
     val servletApiVersion = ServletApiVersion(servletContext)
-    logger.info(s"Detected Servlet API version $servletApiVersion")
 
     verifyServletIo(servletApiVersion)
     logServletIo()
@@ -46,15 +43,11 @@ class Http4sServlet(service: HttpService,
   // Remove when we can break binary compatibility.
   private def verifyServletIo(servletApiVersion: ServletApiVersion): Unit = servletIo match {
     case NonBlockingServletIo(chunkSize) if servletApiVersion < ServletApiVersion(3, 1) =>
-      logger.warn("Non-blocking servlet I/O requires Servlet API >= 3.1. Falling back to blocking I/O.")
       servletIo = BlockingServletIo(chunkSize)
     case _ => // cool
   }
 
-  private def logServletIo(): Unit = logger.info(servletIo match {
-    case BlockingServletIo(chunkSize) => s"Using blocking servlet I/O with chunk size $chunkSize"
-    case NonBlockingServletIo(chunkSize) => s"Using non-blocking servlet I/O with chunk size $chunkSize"
-  })
+  private def logServletIo(): Unit = ()
 
   override def service(servletRequest: HttpServletRequest, servletResponse: HttpServletResponse): Unit =
     try {
@@ -105,7 +98,6 @@ class Http4sServlet(service: HttpService,
       }
       else {
         val servletRequest = ctx.getRequest.asInstanceOf[HttpServletRequest]
-        logger.warn(s"Async context timed out, but response was already committed: ${request.method} ${request.uri.path}")
       }
       ctx.complete()
     }
@@ -125,11 +117,9 @@ class Http4sServlet(service: HttpService,
     }
 
   private def errorHandler(servletRequest: ServletRequest, servletResponse: HttpServletResponse): PartialFunction[Throwable, Unit] = {
-    case t: Throwable if servletResponse.isCommitted =>
-     logger.error(t)("Error processing request after response was committed")
+    case t: Throwable if servletResponse.isCommitted => ()
 
     case t: Throwable =>
-      logger.error(t)("Error processing request")
       val response = Task.now(Response(Status.InternalServerError))
       // We don't know what I/O mode we're in here, and we're not rendering a body
       // anyway, so we use a NullBodyWriter.

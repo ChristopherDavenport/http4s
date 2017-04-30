@@ -4,10 +4,8 @@ package middleware
 
 import fs2.Task
 import fs2.interop.cats._
-import org.log4s.getLogger
 
 object PushSupport {
-  private[this] val logger = getLogger
 
   implicit class PushOps(response: Task[Response]) {
     def push(url: String, cascade: Boolean = true)(implicit req: Request): Task[Response] = response.map { response =>
@@ -23,8 +21,6 @@ object PushSupport {
         else url
       }
 
-      logger.trace(s"Adding push resource: $newUrl")
-
       val newPushResouces = response.attributes.get(pushLocationKey)
         .map(_ :+ PushLocation(newUrl, cascade))
         .getOrElse(Vector(PushLocation(newUrl,cascade)))
@@ -35,9 +31,7 @@ object PushSupport {
     }
   }
 
-  private def handleException(t: Throwable): Unit = {
-    logger.error(t)("Push resource route failure")
-  }
+  private def handleException(t: Throwable): Unit = ()
 
   private def locToRequest(push: PushLocation, req: Request): Request =
     req.withPathInfo(push.location)

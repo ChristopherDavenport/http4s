@@ -4,11 +4,9 @@ package blaze
 
 import fs2._
 import org.http4s.blaze.pipeline.Command
-import org.log4s.getLogger
 
 /** Blaze client implementation */
 object BlazeClient {
-  private[this] val logger = getLogger
 
   /** Construct a new [[Client]] using blaze components
     *
@@ -26,9 +24,7 @@ object BlazeClient {
       // If we can't invalidate a connection, it shouldn't tank the subsequent operation,
       // but it should be noisy.
       def invalidate(connection: A): Task[Unit] =
-        manager.invalidate(connection).handle {
-          case e => logger.error(e)("Error invalidating connection")
-        }
+        manager.invalidate(connection)
 
       def loop(next: manager.NextConnection): Task[DisposableResponse] = {
         // Add the timeout stage to the pipeline

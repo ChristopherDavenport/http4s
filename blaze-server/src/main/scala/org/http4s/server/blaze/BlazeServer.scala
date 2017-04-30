@@ -21,7 +21,6 @@ import org.http4s.blaze.channel.nio1.NIO1SocketServerGroup
 import org.http4s.blaze.channel.nio2.NIO2SocketServerGroup
 import org.http4s.server.SSLKeyStoreSupport.StoreInfo
 import org.http4s.util.threads.DefaultPool
-import org.log4s.getLogger
 
 class BlazeBuilder(
   socketAddress: InetSocketAddress,
@@ -45,7 +44,6 @@ class BlazeBuilder(
 {
   type Self = BlazeBuilder
 
-  private[this] val logger = getLogger
 
   private def copy(socketAddress: InetSocketAddress = socketAddress,
                  serviceExecutor: ExecutorService = serviceExecutor,
@@ -167,7 +165,7 @@ class BlazeBuilder(
           lb.prepend(new SSLStage(engine))
 
         case None =>
-          if (isHttp2Enabled) logger.warn("HTTP/2 support requires TLS. Falling back to HTTP/1.")
+          if (isHttp2Enabled) ()//logger.warn("HTTP/2 support requires TLS. Falling back to HTTP/1.")
           var lb = LeafBuilder(http1Stage(secure = false))
           lb = prependIdleTimeout(lb)
           lb

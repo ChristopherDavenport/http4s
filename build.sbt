@@ -49,7 +49,7 @@ lazy val core = libraryProject("core")
       fs2Cats,
       fs2Io,
       http4sWebsocket,
-      log4s,
+//      log4s,
       macroCompat,
       scalaReflect(scalaOrganization.value, scalaVersion.value) % "provided",
       scodecBits,

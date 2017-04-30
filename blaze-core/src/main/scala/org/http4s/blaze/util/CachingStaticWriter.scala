@@ -8,13 +8,11 @@ import scala.concurrent.{ExecutionContext, Future}
 import fs2._
 import org.http4s.blaze.pipeline.TailStage
 import org.http4s.util.StringWriter
-import org.log4s.getLogger
 
 class CachingStaticWriter(writer: StringWriter, out: TailStage[ByteBuffer],
                           bufferSize: Int = 8*1024)
                          (implicit val ec: ExecutionContext)
                           extends EntityBodyWriter {
-  private[this] val logger = getLogger
 
   @volatile
   private var _forceClose = false

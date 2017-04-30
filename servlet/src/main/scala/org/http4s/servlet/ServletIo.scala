@@ -8,7 +8,6 @@ import javax.servlet.{ReadListener, WriteListener}
 import fs2.Task.Callback
 import fs2.{Chunk, Strategy, Stream, Task, io, pipe}
 import org.http4s.util.{TrampolineExecutionContext, bug}
-import org.log4s.getLogger
 
 import scala.annotation.tailrec
 
@@ -52,7 +51,6 @@ final case class BlockingServletIo(chunkSize: Int) extends ServletIo {
  * operationally annoying.
  */
 final case class NonBlockingServletIo(chunkSize: Int) extends ServletIo {
-  private[this] val logger = getLogger
 
   private[this] def rightSome[A](a: A) = Right(Some(a))
   private[this] val rightNone = Right(None)
@@ -79,7 +77,6 @@ final case class NonBlockingServletIo(chunkSize: Int) extends ServletIo {
         cb(rightNone)
       }
       else if (len == 0) {
-        logger.warn("Encountered a read of length 0")
         cb(rightSome(Chunk.empty))
       }
       else cb(rightSome(Chunk.bytes(buf, 0, len)))
@@ -142,7 +139,6 @@ final case class NonBlockingServletIo(chunkSize: Int) extends ServletIo {
               val t = bug("Two callbacks found in read state")
               cb(Left(t))
               c1(Left(t))
-              logger.error(t)("This should never happen. Please report.")
               throw t
 
             case Init =>
@@ -175,7 +171,6 @@ final case class NonBlockingServletIo(chunkSize: Int) extends ServletIo {
 
     val writeChunk = Right { chunk: Chunk[Byte] =>
       if (!out.isReady) {
-        logger.error(s"writeChunk called while out was not ready, bytes will be lost!")
       } else {
         out.write(chunk.toArray)
         if (autoFlush && out.isReady)
