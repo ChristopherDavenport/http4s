@@ -7,15 +7,15 @@ function checkPublishable() {
     if [[ $TRAVIS_PULL_REQUEST != "false" ]]; then
         echo ""
         echo "Pull Requests are not published to $publishLocation"
-        exit 0
+        exit 1
     elif [[ $TRAVIS_REPO_SLUG != "http4s/http4s" ]]; then
         echo ""
         echo "Builds in Repositories other than http4s/http4s are not published to $publishLocation"
-        exit 0
+        exit 1
     elif [[ $TRAVIS_BRANCH != "master" || $TRAVIS_BRANCH != "release-"* ]]; then
         echo ""
         echo "As set in bin/setup this is not a publishing branch to $publishLocation"
-        exit 0
+        exit 1
     else
         echo "This Build Will Be Published To $publishLocation"
     fi
