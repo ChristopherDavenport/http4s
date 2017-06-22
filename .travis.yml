@@ -36,6 +36,81 @@ jobs:
       scala: 2.11.11-bin-typelevel-4
       script: $TRAVIS_BUILD_DIR/bin/test.sh
 
+
+    - <<: *tests
+      scala: 2.12.2-bin-typelevel-4
+      env: HTTP4S_MODULE=tests/
+      script: $TRAVIS_BUILD_DIR/bin/test.sh
+    - <<: *tests
+      scala: 2.12.2-bin-typelevel-4
+      env: HTTP4S_MODULE=server/
+      script: $TRAVIS_BUILD_DIR/bin/test.sh
+    - <<: *tests
+      scala: 2.12.2-bin-typelevel-4
+      env: HTTP4S_MODULE=client/
+      script: $TRAVIS_BUILD_DIR/bin/test.sh
+    - <<: *tests
+      scala: 2.12.2-bin-typelevel-4
+      env: HTTP4S_MODULE=blaze-core/
+      script: $TRAVIS_BUILD_DIR/bin/test.sh
+    - <<: *tests
+      scala: 2.12.2-bin-typelevel-4
+      env: HTTP4S_MODULE=blaze-server/
+      script: $TRAVIS_BUILD_DIR/bin/test.sh
+    - <<: *tests
+      scala: 2.12.2-bin-typelevel-4
+      env: HTTP4S_MODULE=blaze-client/
+      script: $TRAVIS_BUILD_DIR/bin/test.sh
+    - <<: *tests
+      scala: 2.12.2-bin-typelevel-4
+      env: HTTP4S_MODULE=async-http-client/
+      script: $TRAVIS_BUILD_DIR/bin/test.sh
+    - <<: *tests
+      scala: 2.12.2-bin-typelevel-4
+      env: HTTP4S_MODULE=servlet/
+      script: $TRAVIS_BUILD_DIR/bin/test.sh
+    - <<: *tests
+      scala: 2.12.2-bin-typelevel-4
+      env: HTTP4S_MODULE=jetty/
+      script: $TRAVIS_BUILD_DIR/bin/test.sh
+    - <<: *tests
+      scala: 2.12.2-bin-typelevel-4
+      env: HTTP4S_MODULE=tomcat/
+      script: $TRAVIS_BUILD_DIR/bin/test.sh
+    - <<: *tests
+      scala: 2.12.2-bin-typelevel-4
+      env: HTTP4S_MODULE=dsl/
+      script: $TRAVIS_BUILD_DIR/bin/test.sh
+    - <<: *tests
+      scala: 2.12.2-bin-typelevel-4
+      env: HTTP4S_MODULE=argonaut/
+      script: $TRAVIS_BUILD_DIR/bin/test.sh
+    - <<: *tests
+      scala: 2.12.2-bin-typelevel-4
+      env: HTTP4S_MODULE=circe/
+      script: $TRAVIS_BUILD_DIR/bin/test.sh
+    - <<: *tests
+      scala: 2.12.2-bin-typelevel-4
+      env: HTTP4S_MODULE=json4s/
+      script: $TRAVIS_BUILD_DIR/bin/test.sh
+
+    - <<: *tests
+      scala: 2.12.2-bin-typelevel-4
+      env: HTTP4S_MODULE=json4s-native/
+      script: $TRAVIS_BUILD_DIR/bin/test.sh
+    - <<: *tests
+      scala: 2.12.2-bin-typelevel-4
+      env: HTTP4S_MODULE=json4s-jackson/
+      script: $TRAVIS_BUILD_DIR/bin/test.sh
+    - <<: *tests
+      scala: 2.12.2-bin-typelevel-4
+      env: HTTP4S_MODULE=scala-xml/
+      script: $TRAVIS_BUILD_DIR/bin/test.sh
+    - <<: *tests
+      scala: 2.12.2-bin-typelevel-4
+      env: HTTP4S_MODULE=twirl/
+      script: $TRAVIS_BUILD_DIR/bin/test.sh
+
     - stage: Publish Site
       scala: 2.12.2-bin-typelevel-4
       script: $TRAVIS_BUILD_DIR/bin/publishSite.sh
