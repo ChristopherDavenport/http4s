@@ -23,14 +23,41 @@ object MultipartParser {
   final case class Out[+A](a: A, tail: Option[ByteVector] = None)
 
   def parse[F[_]: Sync](boundary: Boundary): Pipe[F, Byte, Either[Headers, ByteVector]] = s => {
-    val bufferedMultipartT = s.runLog.map(vec => ByteVector(vec))
-    val parts = bufferedMultipartT.flatMap(parseToParts(_)(boundary))
-    val listT = parts.map(splitParts(_)(boundary)(List.empty[Either[Headers, ByteVector]]))
+    // Stream of Parts consisting of Stream of Headers and Stream of ByteVectors
+      s.chunks
+      .map(c => ByteVector(c.toVector))
+      .dropThrough(_.containsSlice(startLineBytes(boundary)))
+      .takeThrough(_.containsSlice(endLineBytes(boundary)))  // We lose how the Message Body is Malformed
+      .through(seperateStream[F, ByteVector](_.containsSlice(expectedBytes(boundary))))
+      .flatMap { s =>
+        val headers = Stream.eval(
+          s.takeThrough(_.containsSlice(CRLFBytes ++ CRLFBytes))
+          .runFold(ByteVector.empty)(_ ++ _)
+        ).map(generateHeaders(_)(Headers.empty)).map(Either.left)
 
-    Stream
-      .eval(listT)
-      .flatMap(list => Stream.emits(list))
+        val body = s.dropThrough(_.containsSlice(CRLFBytes ++ CRLFBytes))
+          .map(Either.right)
+
+        headers ++ body
+      }
   }
+
+  def seperateStream[F[_], A](f: A => Boolean): Pipe[F, A, Stream[F, A]] = s => {
+    Stream.emit(s.takeThrough(f)) ++ s.dropThrough(f).through(seperateStream(f))
+  }
+
+//  def parse[F[_]: Sync](boundary: Boundary): Pipe[F, Byte, Either[Headers, ByteVector]] = s => {
+//    val bufferedMultipartT = s.runLog.map(vec => ByteVector(vec))
+//    val parts = bufferedMultipartT.flatMap(parseToParts(_)(boundary))
+//    val listT = parts.map(splitParts(_)(boundary)(List.empty[Either[Headers, ByteVector]]))
+//
+//    Stream
+//      .eval(listT)
+//      .flatMap(list => Stream.emits(list))
+//  }
+//
+
+
 
   /**
     * parseToParts - Removes Prelude and Trailer
@@ -42,8 +69,7 @@ object MultipartParser {
     * generateHeaders - Generate Headers from ByteVector
     * splitHeader - Splits a Header into the Name and Value
     */
-  def parseToParts[F[_]](byteVector: ByteVector)(boundary: Boundary)(
-      implicit F: Sync[F]): F[ByteVector] = {
+  def parseToParts[F[_]](byteVector: ByteVector)(boundary: Boundary)(implicit F: Sync[F]): F[ByteVector] = {
     val startLine = startLineBytes(boundary)
     val startIndex = byteVector.indexOfSlice(startLine)
     val endLine = endLineBytes(boundary)
@@ -71,9 +97,12 @@ object MultipartParser {
       Option((byteVector, ByteVector.empty))
     }
   }
+
+
   @tailrec
-  def splitParts(byteVector: ByteVector)(boundary: Boundary)(
-      acc: List[Either[Headers, ByteVector]]): List[Either[Headers, ByteVector]] = {
+  def splitParts(byteVector: ByteVector)
+                (boundary: Boundary)
+                (acc: List[Either[Headers, ByteVector]]): List[Either[Headers, ByteVector]] = {
 
     val expected = expectedBytes(boundary)
     val containsExpected = byteVector.containsSlice(expected)
