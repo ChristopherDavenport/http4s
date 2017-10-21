@@ -479,7 +479,7 @@ lazy val commonSettings = Seq(
       }
     }).transform(node).head
   },
-  coursierVerbosity := 0,
+  //coursierVerbosity := 0,
   ivyLoggingLevel := UpdateLogging.Quiet, // This doesn't seem to work? We see this in MiMa
   git.remoteRepo := "git@github.com:http4s/http4s.git",
   includeFilter in Hugo := (
