@@ -4,7 +4,7 @@ package multipart
 import java.nio.charset.StandardCharsets
 
 import fs2._
-import org.http4s.internal.ChunkWriter
+import scala.collection.immutable.VectorBuilder
 
 private[http4s] class MultipartEncoder[F[_]] extends EntityEncoder[F, Multipart[F]] {
 
@@ -42,14 +42,14 @@ private[http4s] class MultipartEncoder[F[_]] extends EntityEncoder[F, Multipart[
   val encapsulationWithoutBody: Boundary => String = boundary =>
     s"${Boundary.CRLF}${dashBoundary(boundary)}${Boundary.CRLF}"
 
+    Chunk.bytes()
   val renderHeaders: Headers => Chunk[Byte] = headers =>
     headers
-      .foldLeft(new ChunkWriter()) { (chunkWriter, header) =>
+      .foldLeft(new VectorBuilder()) { (chunkWriter, header) =>
         chunkWriter
-          .append(header)
-          .append(Boundary.CRLF)
+          +=(header.getBytes(charset), Boundary.CRLF.getBytes(charset))
+
       }
-      .toChunk
 
   def renderPart(prelude: Chunk[Byte])(part: Part[F]): Stream[F, Byte] =
     Stream.chunk(prelude) ++
