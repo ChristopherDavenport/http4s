@@ -32,20 +32,20 @@ object EmberClientSimpleExample extends IOApp {
       .default[IO]
       .build
       .use(client =>
-        logTimed(
-          logger,
-          "Http Only - ChristopherDavenport Site",
-          getRequestBufferedBody(client, githubReq)) >>
+        // logTimed(
+        //   logger,
+        //   "Http Only - ChristopherDavenport Site",
+        //   getRequestBufferedBody(client, githubReq)) >>
           logTimed(logger, "Json - DadJoke", client.expect[Json](dadJokeReq)) >>
-          logTimed(logger, "Https - Google", getRequestBufferedBody(client, googleReq)) >>
-          logTimed(
-            logger,
-            "Small Response - HttpBin Get",
-            getRequestBufferedBody(client, httpBinGet)) >>
-          logTimed(
-            logger,
-            "Large Response - HttpBin PNG",
-            getRequestBufferedBody(client, httpBinPng)) >>
+          // logTimed(logger, "Https - Google", getRequestBufferedBody(client, googleReq)) >>
+          // logTimed(
+          //   logger,
+          //   "Small Response - HttpBin Get",
+          //   getRequestBufferedBody(client, httpBinGet)) >>
+          // logTimed(
+          //   logger,
+          //   "Large Response - HttpBin PNG",
+          //   getRequestBufferedBody(client, httpBinPng)) >>
           IO(println("Done")))
 
   }.as(ExitCode.Success)

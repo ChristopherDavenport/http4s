@@ -93,12 +93,16 @@ final class EmberClientBuilder[F[_]: Concurrent: Timer: ContextShift] private (
                 requestKey,
                 tlsContextOptWithDefault,
                 sg,
-                additionalSocketOptions
+                additionalSocketOptions,
+                logger
               )
-              .allocated <* logger.trace(s"Created Connection - RequestKey: ${requestKey}")
+              .allocated.flatMap{ case (rks, shutdown) => 
+                logger.trace(s"Socket[${rks.socketIdentifier.hash}] Created Connection - RequestKey: ${requestKey}")
+                  .as((rks, shutdown))
+              }
           }, {
-            case (RequestKeySocket(socket, r), shutdown) =>
-              logger.trace(s"Shutting Down Connection - RequestKey: ${r}") >>
+            case (RequestKeySocket(socket, r, identifier), shutdown) =>
+              logger.trace(s"Socket[${identifier.hash}] Shutting Down Connection - RequestKey: ${r}") >>
                 socket.endOfInput.attempt.void >>
                 socket.endOfOutput.attempt.void >>
                 socket.close.attempt.void >>
@@ -118,7 +122,7 @@ final class EmberClientBuilder[F[_]: Concurrent: Timer: ContextShift] private (
           _ <- Resource.liftF(
             pool.state.flatMap { poolState =>
               logger.trace(
-                s"Connection Taken - Key: ${managed.value._1.requestKey} - Reused: ${managed.isReused} - PoolState: $poolState"
+                s"Socket[${managed.value._1.socketIdentifier.hash}] Taken - Key: ${managed.value._1.requestKey} - Reused: ${managed.isReused} - PoolState: $poolState"
               )
             }
           )
