@@ -77,8 +77,11 @@ private[ember] object Encoder {
       stringBuilder.append(CRLF)
       stringBuilder.toString.getBytes(StandardCharsets.ISO_8859_1)
     }
-    if (req.isChunked) 
-      Stream.chunk(Chunk.array(initSection)) ++ req.body.through(ChunkedEncoding.encode[F]) 
-    else (Stream.chunk(Chunk.array(initSection)) ++ req.body).chunkMin(256 * 1024).flatMap(Stream.chunk)
+    if (req.isChunked)
+      Stream.chunk(Chunk.array(initSection)) ++ req.body.through(ChunkedEncoding.encode[F])
+    else
+      (Stream.chunk(Chunk.array(initSection)) ++ req.body)
+        .chunkMin(256 * 1024)
+        .flatMap(Stream.chunk)
   }
 }
